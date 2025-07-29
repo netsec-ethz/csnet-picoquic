@@ -272,6 +272,11 @@ else()
     list(APPEND PICOQUIC_COMPILE_DEFINITIONS PTLS_WITHOUT_OPENSSL)
 endif()
 
+option(USE_SCION "use SCION" OFF)
+if (USE_SCION)
+    list(APPEND PICOQUIC_COMPILE_DEFINITIONS PICOQUIC_USE_SCION)
+endif()
+
 OPTION(WITH_MBEDTLS "enable MBEDTLS" OFF)
 
 IF (WITH_MBEDTLS)
@@ -341,12 +346,14 @@ target_include_directories(picoquic-core
         ${OPENSSL_INCLUDE_DIR}
     PUBLIC
         ${MBEDTLS_INCLUDE_DIRS}
+        ${SCION_INCLUDE_DIR}
         picoquic
         picoquic_mbedtls)
 target_link_libraries(picoquic-core
     PRIVATE
         ${OPENSSL_LIBRARIES}
         ${MBEDTLS_LIBRARIES}
+        ${SCION_LIBRARIES}
     PUBLIC
         ${PTLS_LIBRARIES}
         Threads::Threads)

@@ -46,13 +46,22 @@ int picoquic_bind_to_port(SOCKET_TYPE fd, int af, int port)
         addr_length = sizeof(struct sockaddr_in6);
     }
 
+#ifdef PICOQUIC_USE_SCION
+    return scion_bind(fd, (struct sockaddr*)&sa, addr_length);
+#else
     return bind(fd, (struct sockaddr*)&sa, addr_length);
+#endif
 }
 
 int picoquic_get_local_address(SOCKET_TYPE sd, struct sockaddr_storage * addr)
 {
     socklen_t name_len = sizeof(struct sockaddr_storage);
+
+#ifdef PICOQUIC_USE_SCION
+    return scion_getsockname(sd, (struct sockaddr *)addr, &name_len, NULL);
+#else
     return getsockname(sd, (struct sockaddr *)addr, &name_len);
+#endif
 }
 
 int picoquic_socket_set_pkt_info(SOCKET_TYPE sd, int af)
@@ -61,28 +70,28 @@ int picoquic_socket_set_pkt_info(SOCKET_TYPE sd, int af)
 #ifdef _WINDOWS
     int option_value = 1;
     if (af == AF_INET6) {
-        ret = setsockopt(sd, IPPROTO_IPV6, IPV6_PKTINFO, (char*)&option_value, sizeof(int));
+        ret = SOCKET_SETOPT(sd, IPPROTO_IPV6, IPV6_PKTINFO, (char*)&option_value, sizeof(int));
     }
     else {
-        ret = setsockopt(sd, IPPROTO_IP, IP_PKTINFO, (char*)&option_value, sizeof(int));
+        ret = SOCKET_SETOPT(sd, IPPROTO_IP, IP_PKTINFO, (char*)&option_value, sizeof(int));
     }
 #else
     if (af == AF_INET6) {
         int val = 1;
-        ret = setsockopt(sd, IPPROTO_IPV6, IPV6_V6ONLY,
+        ret = SOCKET_SETOPT(sd, IPPROTO_IPV6, IPV6_V6ONLY,
             &val, sizeof(val));
         if (ret == 0) {
             val = 1;
-            ret = setsockopt(sd, IPPROTO_IPV6, IPV6_RECVPKTINFO, (char*)&val, sizeof(int));
+            ret = SOCKET_SETOPT(sd, IPPROTO_IPV6, IPV6_RECVPKTINFO, (char*)&val, sizeof(int));
         }
     }
     else {
         int val = 1;
 #ifdef IP_PKTINFO
-        ret = setsockopt(sd, IPPROTO_IP, IP_PKTINFO, (char*)&val, sizeof(int));
+        ret = SOCKET_SETOPT(sd, IPPROTO_IP, IP_PKTINFO, (char*)&val, sizeof(int));
 #else
         /* The IP_PKTINFO structure is not defined on BSD */
-        ret = setsockopt(sd, IPPROTO_IP, IP_RECVDSTADDR, (char*)&val, sizeof(int));
+        ret = SOCKET_SETOPT(sd, IPPROTO_IP, IP_RECVDSTADDR, (char*)&val, sizeof(int));
 #endif
     }
 #endif
@@ -100,7 +109,7 @@ int picoquic_socket_set_ecn_options(SOCKET_TYPE sd, int af, int * recv_set, int 
         {
             DWORD recvEcn = 1;
             /* Request receiving ECN reports in recvmsg */
-            ret = setsockopt(sd, IPPROTO_IPV6, IPV6_ECN, (char *)&recvEcn, sizeof(recvEcn));
+            ret = SOCKET_SETOPT(sd, IPPROTO_IPV6, IPV6_ECN, (char *)&recvEcn, sizeof(recvEcn));
             if (ret < 0) {
                 DBG_PRINTF("setsockopt IPV6_ECN (0x%x) fails, errno: %d\n", recvEcn, GetLastError());
                 ret = -1;
@@ -124,7 +133,7 @@ int picoquic_socket_set_ecn_options(SOCKET_TYPE sd, int af, int * recv_set, int 
             DWORD recvEcn =1;
 
             /* Request receiving ECN reports in recvmsg */
-            ret = setsockopt(sd, IPPROTO_IP, IP_ECN, (CHAR*)&recvEcn, sizeof(recvEcn));
+            ret = SOCKET_SETOPT(sd, IPPROTO_IP, IP_ECN, (CHAR*)&recvEcn, sizeof(recvEcn));
             if (ret < 0) {
                 DBG_PRINTF("setsockopt IP_ECN (0x%x) fails, errno: %d\n", recvEcn, GetLastError());
                 ret = -1;
@@ -145,7 +154,7 @@ int picoquic_socket_set_ecn_options(SOCKET_TYPE sd, int af, int * recv_set, int 
 #if defined(IPV6_TCLASS)
         {
             unsigned int ecn = PICOQUIC_ECN_ECT_1; /* Setting ECN_ECT_1 in outgoing packets */
-            if (setsockopt(sd, IPPROTO_IPV6, IPV6_TCLASS, &ecn, sizeof(ecn)) < 0) {
+            if (SOCKET_SETOPT(sd, IPPROTO_IPV6, IPV6_TCLASS, &ecn, sizeof(ecn)) < 0) {
                 DBG_PRINTF("setsockopt IPV6_TCLASS (0x%x) fails, errno: %d\n", ecn, errno);
                 *send_set = 0;
             }
@@ -162,7 +171,7 @@ int picoquic_socket_set_ecn_options(SOCKET_TYPE sd, int af, int * recv_set, int 
             unsigned int set = 0x01;
 
             /* Request receiving TOS reports in recvmsg */
-            if (setsockopt(sd, IPPROTO_IPV6, IPV6_RECVTCLASS, &set, sizeof(set)) < 0) {
+            if (SOCKET_SETOPT(sd, IPPROTO_IPV6, IPV6_RECVTCLASS, &set, sizeof(set)) < 0) {
                 DBG_PRINTF("setsockopt IPv6 IPV6_RECVTCLASS (0x%x) fails, errno: %d\n", set, errno);
                 ret = -1;
                 *recv_set = 0;
@@ -183,7 +192,7 @@ int picoquic_socket_set_ecn_options(SOCKET_TYPE sd, int af, int * recv_set, int 
         {
             unsigned int ecn = PICOQUIC_ECN_ECT_1;
             /* Request setting ECN_ECT_1 in outgoing packets */
-            if (setsockopt(sd, IPPROTO_IP, IP_TOS, &ecn, sizeof(ecn)) < 0) {
+            if (SOCKET_SETOPT(sd, IPPROTO_IP, IP_TOS, &ecn, sizeof(ecn)) < 0) {
                 DBG_PRINTF("setsockopt IPv4 IP_TOS (0x%x) fails, errno: %d\n", ecn, errno);
                 *send_set = 0;
             }
@@ -201,7 +210,7 @@ int picoquic_socket_set_ecn_options(SOCKET_TYPE sd, int af, int * recv_set, int 
             unsigned int set = 1;
 
             /* Request receiving TOS reports in recvmsg */
-            if (setsockopt(sd, IPPROTO_IP, IP_RECVTOS, &set, sizeof(set)) < 0) {
+            if (SOCKET_SETOPT(sd, IPPROTO_IP, IP_RECVTOS, &set, sizeof(set)) < 0) {
                 DBG_PRINTF("setsockopt IPv4 IP_RECVTOS (0x%x) fails, errno: %d\n", set, errno);
                 ret = -1;
                 *recv_set = 0;
@@ -227,10 +236,10 @@ int picoquic_socket_set_pmtud_options(SOCKET_TYPE sd, int af)
 #if defined __linux && defined(IP_MTU_DISCOVER) && defined(IPV6_MTU_DISCOVER) && defined(IP_PMTUDISC_PROBE)
     int val = IP_PMTUDISC_PROBE;
     if (af == AF_INET6) {
-        ret = setsockopt(sd, IPPROTO_IPV6, IPV6_MTU_DISCOVER, &val, sizeof(int));
+        ret = SOCKET_SETOPT(sd, IPPROTO_IPV6, IPV6_MTU_DISCOVER, &val, sizeof(int));
     }
     else {
-        ret = setsockopt(sd, IPPROTO_IP, IP_MTU_DISCOVER, &val, sizeof(int));
+        ret = SOCKET_SETOPT(sd, IPPROTO_IP, IP_MTU_DISCOVER, &val, sizeof(int));
     }
 #else
 #ifdef UNREFERENCED_PARAMETER
@@ -810,7 +819,7 @@ picoquic_recvmsg_async_ctx_t * picoquic_create_async_socket(int af, int recv_coa
                     }
                     else if (recv_coalesced)
                     {
-                        if ((ret = setsockopt(ctx->fd, IPPROTO_UDP, UDP_RECV_MAX_COALESCED_SIZE, (char*)&coalesced_size,
+                        if ((ret = SOCKET_SETOPT(ctx->fd, IPPROTO_UDP, UDP_RECV_MAX_COALESCED_SIZE, (char*)&coalesced_size,
                             (int)sizeof(coalesced_size))) != 0) {
                             last_error = GetLastError();
                             DBG_PRINTF("Cannot set UDP_RECV_MAX_COALESCED_SIZE %d, returns %d (%d)",
@@ -1024,12 +1033,18 @@ int picoquic_recvmsg(SOCKET_TYPE fd,
     msg.msg_control = (void*)cmsg_buffer;
     msg.msg_controllen = sizeof(cmsg_buffer);
 
+#ifdef PICOQUIC_USE_SCION
+    bytes_recv = scion_recvmsg(fd, &msg, 0, NULL, NULL);
+#else
     bytes_recv = recvmsg(fd, &msg, 0);
+#endif
 
     if (bytes_recv <= 0) {
         addr_from->ss_family = 0;
     } else {
+#ifndef PICOQUIC_USE_SCION
         picoquic_socks_cmsg_parse(&msg, addr_dest, dest_if, received_ecn, NULL);
+#endif
     }
 
     return bytes_recv;
@@ -1128,14 +1143,28 @@ int picoquic_sendmsg(SOCKET_TYPE fd,
     msg.msg_control = (void*)cmsg_buffer;
     msg.msg_controllen = sizeof(cmsg_buffer);
 
+#ifdef PICOQUIC_USE_SCION
+    msg.msg_control = NULL;
+    msg.msg_controllen = 0;
+#else
     /* Format the control message */
     picoquic_socks_cmsg_format(&msg, length, send_msg_size, addr_from, dest_if);
+#endif
 
+    // TODO get rid of hardcoded dst_ia
+#ifdef PICOQUIC_USE_SCION
+    bytes_sent = scion_sendmsg(fd, &msg, 0, 0x1ff0000000133, NULL);
+#else
     bytes_sent = sendmsg(fd, &msg, 0);
+#endif
 
 
     if (bytes_sent <= 0) {
+#ifdef PICOQUIC_USE_SCION
+        int last_error = bytes_sent;
+#else
         int last_error = errno;
+#endif
 #ifndef DISABLE_DEBUG_PRINTF
         DBG_PRINTF("Could not send packet on UDP socket[AF=%d]= %d!\n",
             addr_dest->sa_family, last_error);
@@ -1172,10 +1201,17 @@ int picoquic_select_ex(SOCKET_TYPE* sockets,
     FD_ZERO(&readfds);
 
     for (int i = 0; i < nb_sockets; i++) {
-        if (sockmax < (int)sockets[i]) {
-            sockmax = (int)sockets[i];
+#ifdef PICOQUIC_USE_SCION
+        int fd;
+        scion_getsockfd(sockets[i], &fd);
+#else
+        int fd = (int)sockets[i];
+#endif
+
+        if (sockmax < fd) {
+            sockmax = fd;
         }
-        FD_SET(sockets[i], &readfds);
+        FD_SET(fd, &readfds);
     }
 
     if (delta_t <= 0) {
@@ -1198,7 +1234,14 @@ int picoquic_select_ex(SOCKET_TYPE* sockets,
         DBG_PRINTF("Error: select returns %d\n", ret_select);
     } else if (ret_select > 0) {
         for (int i = 0; i < nb_sockets; i++) {
-            if (FD_ISSET(sockets[i], &readfds)) {
+#ifdef PICOQUIC_USE_SCION
+            int fd;
+            scion_getsockfd(sockets[i], &fd);
+#else
+            int fd = (int)sockets[i];
+#endif
+
+            if (FD_ISSET(fd, &readfds)) {
                 *socket_rank = i;
                 bytes_recv = picoquic_recvmsg(sockets[i], addr_from,
                     addr_dest, dest_if, received_ecn,
@@ -1390,6 +1433,8 @@ int picoquic_socket_error_implies_unreachable(int sock_err)
         WSAEACCES, WSAEADDRNOTAVAIL, WSAEAFNOSUPPORT, WSAECONNRESET,
         WSAEDESTADDRREQ, WSAEHOSTUNREACH, WSAENETDOWN, WSAENETRESET,
         WSAENETUNREACH, WSAESHUTDOWN, -1 };
+#elif defined(PICOQUIC_USE_SCION)
+    static int unreachable_errors[] = { SCION_ERR_NO_PATHS, -1 };
 #else
     static int unreachable_errors[] = {
         EAFNOSUPPORT, ECONNRESET, EHOSTUNREACH, ENETDOWN, ENETUNREACH, -1 };

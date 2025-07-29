@@ -43,6 +43,12 @@
 #ifndef SOCKET_CLOSE
 #define SOCKET_CLOSE(x) closesocket(x)
 #endif
+#ifndef SOCKET_SETOPT
+#define SOCKET_SETOPT(socket, level, optname, optval, optlen) setsockopt(socket, level, optname, optval, optlen)
+#endif
+#ifndef SOCKET_GETOPT
+#define SOCKET_GETOPT(socket, level, optname, optval, optlen) getsockopt(socket, level, optname, optval, optlen)
+#endif
 #ifndef WSA_START_DATA
 #define WSA_START_DATA WSADATA
 #endif
@@ -92,6 +98,30 @@
 #include <netinet/udp.h>
 #include <sys/select.h>
 
+#ifdef PICOQUIC_USE_SCION
+
+#include <scion/scion.h>
+#ifndef SOCKET_TYPE
+#define SOCKET_TYPE struct scion_socket *
+#endif
+#ifndef INVALID_SOCKET
+#define INVALID_SOCKET (NULL)
+#endif
+#ifndef SOCKET_CLOSE
+#define SOCKET_CLOSE(x) scion_close(x)
+#endif
+#ifndef SOCKET_SETOPT
+#define SOCKET_SETOPT(socket, level, optname, optval, optlen) scion_setsockopt(socket, level, optname, optval, optlen)
+#endif
+#ifndef SOCKET_GETOPT
+#define SOCKET_GETOPT(socket, level, optname, optval, optlen) scion_getsockopt(socket, level, optname, optval, optlen)
+#endif
+#ifndef WSA_LAST_ERROR
+#define WSA_LAST_ERROR(x) ((long)(x))
+#endif
+
+#else
+
 #ifndef SOCKET_TYPE
 #define SOCKET_TYPE int
 #endif
@@ -101,12 +131,21 @@
 #ifndef SOCKET_CLOSE
 #define SOCKET_CLOSE(x) close(x)
 #endif
+#ifndef SOCKET_SETOPT
+#define SOCKET_SETOPT(socket, level, optname, optval, optlen) setsockopt(socket, level, optname, optval, optlen)
+#endif
+#ifndef SOCKET_GETOPT
+#define SOCKET_GETOPT(socket, level, optname, optval, optlen) getsockopt(socket, level, optname, optval, optlen)
+#endif
 #ifndef WSA_LAST_ERROR
 #define WSA_LAST_ERROR(x) ((long)(x))
 #endif
 #ifndef IPV6_RECVPKTINFO
 #define IPV6_RECVPKTINFO IPV6_PKTINFO /* Cygwin */
 #endif
+
+#endif
+
 #endif
 
 #define PICOQUIC_ECN_ECT_0 0x02

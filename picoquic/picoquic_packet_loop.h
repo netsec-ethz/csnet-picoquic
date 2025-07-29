@@ -69,6 +69,10 @@ typedef struct st_picoquic_socket_ctx_t {
     int so_sndbuf;
     int so_rcvbuf;
 #endif
+#ifdef PICOQUIC_USE_SCION
+    struct scion_topology *topology;
+    struct scion_network *network;
+#endif
 } picoquic_socket_ctx_t;
 
 /* The packet loop will call the application back after specific events.
