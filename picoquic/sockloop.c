@@ -50,6 +50,12 @@
 #ifndef SOCKET_CLOSE
 #define SOCKET_CLOSE(x) closesocket(x)
 #endif
+#ifndef SOCKET_SETOPT
+#define SOCKET_SETOPT(socket, level, optname, optval, optlen) setsockopt(socket, level, optname, optval, optlen)
+#endif
+#ifndef SOCKET_GETOPT
+#define SOCKET_GETOPT(socket, level, optname, optval, optlen) getsockopt(socket, level, optname, optval, optlen)
+#endif
 #ifndef WSA_LAST_ERROR
 #define WSA_LAST_ERROR(x) WSAGetLastError()
 #endif
@@ -89,6 +95,30 @@
 
 #include <pthread.h>
 
+#ifdef PICOQUIC_USE_SCION
+
+#include <scion/scion.h>
+#ifndef SOCKET_TYPE
+#define SOCKET_TYPE struct scion_socket *
+#endif
+#ifndef INVALID_SOCKET
+#define INVALID_SOCKET (NULL)
+#endif
+#ifndef SOCKET_CLOSE
+#define SOCKET_CLOSE(x) scion_close(x)
+#endif
+#ifndef SOCKET_SETOPT
+#define SOCKET_SETOPT(socket, level, optname, optval, optlen) scion_setsockopt(socket, level, optname, optval, optlen)
+#endif
+#ifndef SOCKET_GETOPT
+#define SOCKET_GETOPT(socket, level, optname, optval, optlen) scion_getsockopt(socket, level, optname, optval, optlen)
+#endif
+#ifndef WSA_LAST_ERROR
+#define WSA_LAST_ERROR(x) ((long)(x))
+#endif
+
+#else
+
 #ifndef SOCKET_TYPE
 #define SOCKET_TYPE int
 #endif
@@ -98,9 +128,18 @@
 #ifndef SOCKET_CLOSE
 #define SOCKET_CLOSE(x) close(x)
 #endif
+#ifndef SOCKET_SETOPT
+#define SOCKET_SETOPT(socket, level, optname, optval, optlen) setsockopt(socket, level, optname, optval, optlen)
+#endif
+#ifndef SOCKET_GETOPT
+#define SOCKET_GETOPT(socket, level, optname, optval, optlen) getsockopt(socket, level, optname, optval, optlen)
+#endif
 #ifndef WSA_LAST_ERROR
 #define WSA_LAST_ERROR(x) ((long)(x))
 #endif
+
+#endif
+
 #endif
 
 #include "picosocks.h"
@@ -142,7 +181,7 @@ void picoquic_sockloop_win_coalescing_test(int * recv_coalesced, int * send_coal
         if (udp_gso_available) {
             option_length = (int)sizeof(option_value);
 
-            if ((ret = getsockopt(fd, IPPROTO_UDP, UDP_SEND_MSG_SIZE, (char*)&option_value, &option_length)) != 0) {
+            if ((ret = SOCKET_GETOPT(fd, IPPROTO_UDP, UDP_SEND_MSG_SIZE, (char*)&option_value, &option_length)) != 0) {
                 last_error = GetLastError();
                 DBG_PRINTF("UDP_SEND_MSG_SIZE not supported, returns %d (%d)", ret, last_error);
                 udp_gso_available = 0;
@@ -155,7 +194,7 @@ void picoquic_sockloop_win_coalescing_test(int * recv_coalesced, int * send_coal
 #ifdef UDP_RECV_MAX_COALESCED_SIZE
         option_value = 1;
         option_length = (int)sizeof(option_value);
-        if ((ret = getsockopt(fd, IPPROTO_UDP, UDP_RECV_MAX_COALESCED_SIZE, (char*)&option_value, &option_length)) != 0) {
+        if ((ret = SOCKET_GETOPT(fd, IPPROTO_UDP, UDP_RECV_MAX_COALESCED_SIZE, (char*)&option_value, &option_length)) != 0) {
             last_error = GetLastError();
             DBG_PRINTF("UDP_RECV_MAX_COALESCED_SIZE not supported, returns %d (%d)", ret, last_error);
         }
@@ -364,7 +403,29 @@ int picoquic_packet_loop_open_socket(int socket_buffer_size, int do_not_use_gso,
     s_ctx->overlap.hEvent = WSA_INVALID_EVENT;
     s_ctx->fd = WSASocket(s_ctx->af, SOCK_DGRAM, IPPROTO_UDP, NULL, 0, WSA_FLAG_OVERLAPPED);
 #else
+#ifdef PICOQUIC_USE_SCION
+    // TODO cleanup the topology and network objects when a socket is closed
+    // TODO make topology path configurable (one for each IPv4 and IPv6)
+    ret = scion_topology_from_file(&s_ctx->topology, "topology.json");
+    if (ret != 0) {
+        DBG_PRINTF("Cannot create topology %d\n", ret);
+        return ret;
+    }
+
+    ret = scion_network(&s_ctx->network, s_ctx->topology);
+    if (ret != 0) {
+        DBG_PRINTF("Cannot create network %d\n", ret);
+        return ret;
+    }
+
+    ret = scion_socket(&s_ctx->fd, s_ctx->af, SCION_SOCK_DGRAM, SCION_PROTO_UDP, s_ctx->network);
+    if (ret != 0) {
+        DBG_PRINTF("Cannot create socket %d\n", ret);
+        return ret;
+    }
+#else
     s_ctx->fd = socket(s_ctx->af, SOCK_DGRAM, IPPROTO_UDP);
+#endif
 #endif
 
     if (s_ctx->fd == INVALID_SOCKET ||
@@ -396,13 +457,13 @@ int picoquic_packet_loop_open_socket(int socket_buffer_size, int do_not_use_gso,
 
             opt_len = sizeof(int);
             so_sndbuf = socket_buffer_size;
-            opt_ret = setsockopt(s_ctx->fd, SOL_SOCKET, SO_SNDBUF, (const char*)&so_sndbuf, opt_len);
+            opt_ret = SOCKET_SETOPT(s_ctx->fd, SOL_SOCKET, SO_SNDBUF, (const char*)&so_sndbuf, opt_len);
             if (opt_ret == 0) {
                 last_op = SO_RCVBUF;
                 last_op_name = "SO_RECVBUF";
                 opt_len = sizeof(int);
                 so_rcvbuf = socket_buffer_size;
-                opt_ret = setsockopt(s_ctx->fd, SOL_SOCKET, SO_RCVBUF, (const char*)&so_rcvbuf, opt_len);
+                opt_ret = SOCKET_SETOPT(s_ctx->fd, SOL_SOCKET, SO_RCVBUF, (const char*)&so_rcvbuf, opt_len);
             }
             if (opt_ret != 0) {
                 int so_errbuf = 0;
@@ -411,7 +472,7 @@ int picoquic_packet_loop_open_socket(int socket_buffer_size, int do_not_use_gso,
 #else
                 int sock_error = errno;
 #endif
-                opt_ret = getsockopt(s_ctx->fd, SOL_SOCKET, last_op, (char*)&so_errbuf, &opt_len);
+                opt_ret = SOCKET_GETOPT(s_ctx->fd, SOL_SOCKET, last_op, (char*)&so_errbuf, &opt_len);
                 DBG_PRINTF("Cannot set %s to %d, err=%d, so_sndbuf=%d (%d)",
                     last_op_name, socket_buffer_size, sock_error, so_errbuf, opt_ret);
                 ret = -1;
@@ -598,10 +659,20 @@ int picoquic_packet_loop_select(picoquic_socket_ctx_t* s_ctx,
     FD_ZERO(&readfds);
 
     for (int i = 0; i < nb_sockets; i++) {
+#ifdef PICOQUIC_USE_SCION
+        int fd;
+        scion_getsockfd(s_ctx[i].fd, &fd);
+
+        if (sockmax < fd) {
+            sockmax = fd;
+        }
+        FD_SET(fd, &readfds);
+#else
         if (sockmax < (int)s_ctx[i].fd) {
             sockmax = (int)s_ctx[i].fd;
         }
         FD_SET(s_ctx[i].fd, &readfds);
+#endif
     }
 
     *is_wake_up_event = 0;
@@ -648,15 +719,27 @@ int picoquic_packet_loop_select(picoquic_socket_ctx_t* s_ctx,
         else
         {
             for (int i = 0; i < nb_sockets; i++) {
+#ifdef PICOQUIC_USE_SCION
+                int fd;
+                scion_getsockfd(s_ctx[i].fd, &fd);
+
+                if (FD_ISSET(fd, &readfds)) {
+#else
                 if (FD_ISSET(s_ctx[i].fd, &readfds)) {
+#endif
                     *socket_rank = i;
                     bytes_recv = picoquic_recvmsg(s_ctx[i].fd, addr_from,
                         addr_dest, dest_if, received_ecn,
                         buffer, buffer_max);
 
                     if (bytes_recv <= 0) {
+#ifdef PICOQUIC_USE_SCION
+                        DBG_PRINTF("Could not receive packet on UDP socket[%d]= %d!\n",
+                            i, fd);
+#else
                         DBG_PRINTF("Could not receive packet on UDP socket[%d]= %d!\n",
                             i, (int)s_ctx[i].fd);
+#endif
                         break;
                     }
                     else {
