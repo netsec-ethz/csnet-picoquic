@@ -404,9 +404,9 @@ int picoquic_packet_loop_open_socket(int socket_buffer_size, int do_not_use_gso,
     s_ctx->fd = WSASocket(s_ctx->af, SOCK_DGRAM, IPPROTO_UDP, NULL, 0, WSA_FLAG_OVERLAPPED);
 #else
 #ifdef PICOQUIC_USE_SCION
-    // TODO fix cleanup here
-    // TODO configurable topolog path
-    ret = scion_topology_from_file(&s_ctx->topology, "csnet-dist/topology/topology.json");
+    // TODO cleanup the topology and network objects when a socket is closed
+    // TODO make topology path configurable (one for each IPv4 and IPv6)
+    ret = scion_topology_from_file(&s_ctx->topology, "topology.json");
     if (ret != 0) {
         DBG_PRINTF("Cannot create topology %d\n", ret);
         return ret;

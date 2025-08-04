@@ -1144,6 +1144,7 @@ int picoquic_sendmsg(SOCKET_TYPE fd,
     msg.msg_controllen = sizeof(cmsg_buffer);
 
 #ifdef PICOQUIC_USE_SCION
+    // TODO instead of sending no control messages at all, implement some useful control messages in csnet and use them here (see picoquic_socks_cmsg_format())
     msg.msg_control = NULL;
     msg.msg_controllen = 0;
 #else
@@ -1151,8 +1152,8 @@ int picoquic_sendmsg(SOCKET_TYPE fd,
     picoquic_socks_cmsg_format(&msg, length, send_msg_size, addr_from, dest_if);
 #endif
 
-    // TODO get rid of hardcoded dst_ia
 #ifdef PICOQUIC_USE_SCION
+    // TODO make destination IA dynamic
     bytes_sent = scion_sendmsg(fd, &msg, 0, 0x1ff0000000133, NULL);
 #else
     bytes_sent = sendmsg(fd, &msg, 0);
